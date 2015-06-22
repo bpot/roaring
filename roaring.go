@@ -753,3 +753,17 @@ func Flip(bm *RoaringBitmap, rangeStart, rangeEnd uint32) *RoaringBitmap {
 func FlipInt(bm *RoaringBitmap, rangeStart, rangeEnd int) *RoaringBitmap {
 	return Flip(bm, uint32(rangeStart), uint32(rangeEnd))
 }
+
+// Snapshot returns a read only view of the bitmap which shares the same memory
+// as the existing bitmap.???
+func (bm *RoaringBitmap) Snapshot() *Snapshot {
+	keys := make([]uint16, 0, len(bm.highlowcontainer.keys))
+	containers := make([]container, 0, len(bm.highlowcontainer.containers))
+
+	bm.highlowcontainer.markAllDirty()
+
+	return &Snapshot{
+		keys:       keys,
+		containers: containers,
+	}
+}

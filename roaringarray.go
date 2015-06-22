@@ -48,6 +48,7 @@ func rangeOfOnes(start, last int) container {
 type roaringArray struct {
 	keys       []uint16
 	containers []container
+	dirty      []bool
 }
 
 func newRoaringArray() *roaringArray {
@@ -60,6 +61,9 @@ func newRoaringArray() *roaringArray {
 func (ra *roaringArray) appendContainer(key uint16, value container) {
 	ra.keys = append(ra.keys, key)
 	ra.containers = append(ra.containers, value)
+	if ra.hasDirty() {
+		ra.dirty = append(ra.dirty, false)
+	}
 }
 
 func (ra *roaringArray) appendCopy(sa roaringArray, startingindex int) {
@@ -100,6 +104,7 @@ func (ra *roaringArray) removeIndexRange(begin, end int) {
 	}
 
 	r := end - begin
+
 	copy(ra.keys[begin:], ra.keys[end:])
 	copy(ra.containers[begin:], ra.containers[end:])
 
@@ -110,8 +115,12 @@ func (ra *roaringArray) resize(newsize int) {
 	for k := newsize; k < len(ra.containers); k++ {
 		ra.containers[k] = nil
 	}
+
 	ra.keys = ra.keys[:newsize]
 	ra.containers = ra.containers[:newsize]
+	if ra.hasDirty() {
+		ra.dirty = ra.dirty[:newsize]
+	}
 }
 
 func (ra *roaringArray) clear() {
@@ -372,5 +381,16 @@ func (ra *roaringArray) advanceUntil(min uint16, pos int) int {
 		}
 	}
 	return upper
+}
 
+func (ra *roaringArray) hasDirty() bool {
+	return len(ra.dirty) > 0
+}
+
+func (ra *roaringArray) markAllDirty() {
+	dirty := make([]bool, 0, len(ra.keys))
+	for i := range dirty {
+		dirty[i] = true
+	}
+	ra.dirty = dirty
 }
