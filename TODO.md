@@ -1,4 +1,8 @@
-### To do
+- Better testing for snapshot
+  - Would be nice to weave into current tests, pretty verify.
+  - Test cloning the bitmap!
+  - Generative testing?!
 
-  - Write performance benchmarks
+- Dedupe functions in roaring bitmap.
 
+- Think more about code organization.

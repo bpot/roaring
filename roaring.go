@@ -168,7 +168,8 @@ func (rb *RoaringBitmap) Add(x uint32) {
 	hb := highbits(x)
 	i := rb.highlowcontainer.getIndex(hb)
 	if i >= 0 {
-		rb.highlowcontainer.setContainerAtIndex(i, rb.highlowcontainer.getContainerAtIndex(i).add(lowbits(x)))
+		c := rb.highlowcontainer.getWritableContainerAtIndex(i)
+		rb.highlowcontainer.setContainerAtIndex(i, c.add(lowbits(x)))
 	} else {
 		newac := newArrayContainer()
 		rb.highlowcontainer.insertNewKeyValueAt(-i-1, hb, newac.add(lowbits(x)))
@@ -185,7 +186,8 @@ func (rb *RoaringBitmap) Remove(x uint32) {
 	hb := highbits(x)
 	i := rb.highlowcontainer.getIndex(hb)
 	if i >= 0 {
-		rb.highlowcontainer.setContainerAtIndex(i, rb.highlowcontainer.getContainerAtIndex(i).remove(lowbits(x)))
+		c := rb.highlowcontainer.getWritableContainerAtIndex(i).remove(lowbits(x))
+		rb.highlowcontainer.setContainerAtIndex(i, c.remove(lowbits(x)))
 		if rb.highlowcontainer.getContainerAtIndex(i).getCardinality() == 0 {
 			rb.highlowcontainer.removeAtIndex(i)
 		}
@@ -257,7 +259,7 @@ main:
 			s2 := x2.highlowcontainer.getKeyAtIndex(pos2)
 			for {
 				if s1 == s2 {
-					c1 := rb.highlowcontainer.getContainerAtIndex(pos1)
+					c1 := rb.highlowcontainer.getWritableContainerAtIndex(pos1)
 					c2 := x2.highlowcontainer.getContainerAtIndex(pos2)
 					diff := c1.iand(c2)
 					if diff.getCardinality() > 0 {
@@ -319,7 +321,7 @@ main:
 			s2 := x2.highlowcontainer.getKeyAtIndex(pos2)
 			for {
 				if s1 == s2 {
-					c1 := rb.highlowcontainer.getContainerAtIndex(pos1)
+					c1 := rb.highlowcontainer.getWritableContainerAtIndex(pos1)
 					c2 := x2.highlowcontainer.getContainerAtIndex(pos2)
 					diff := c1.iandNot(c2)
 					if diff.getCardinality() > 0 {
@@ -334,7 +336,7 @@ main:
 					s1 = rb.highlowcontainer.getKeyAtIndex(pos1)
 					s2 = x2.highlowcontainer.getKeyAtIndex(pos2)
 				} else if s1 < s2 {
-					c1 := rb.highlowcontainer.getContainerAtIndex(pos1)
+					c1 := rb.highlowcontainer.getWritableContainerAtIndex(pos1)
 					rb.highlowcontainer.replaceKeyAndContainerAtIndex(intersectionsize, s1, c1)
 					intersectionsize++
 					pos1++
@@ -757,13 +759,20 @@ func FlipInt(bm *RoaringBitmap, rangeStart, rangeEnd int) *RoaringBitmap {
 // Snapshot returns a read only view of the bitmap which shares the same memory
 // as the existing bitmap.???
 func (bm *RoaringBitmap) Snapshot() *Snapshot {
-	keys := make([]uint16, 0, len(bm.highlowcontainer.keys))
-	containers := make([]container, 0, len(bm.highlowcontainer.containers))
+	keys := make([]uint16, len(bm.highlowcontainer.keys))
+	containers := make([]container, len(bm.highlowcontainer.containers))
+	dirty := make([]bool, len(bm.highlowcontainer.dirty))
+
+	copy(keys, bm.highlowcontainer.keys)
+	copy(containers, bm.highlowcontainer.containers)
 
 	bm.highlowcontainer.markAllDirty()
 
 	return &Snapshot{
-		keys:       keys,
-		containers: containers,
+		highlowcontainer: roaringArray{
+			keys:       keys,
+			containers: containers,
+			dirty:      dirty,
+		},
 	}
 }
