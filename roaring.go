@@ -7,7 +7,6 @@ package roaring
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"strconv"
 )
@@ -144,9 +143,7 @@ func (rb *RoaringBitmap) Clone() *RoaringBitmap {
 
 // Contains returns true if the integer is contained in the bitmap
 func (rb *RoaringBitmap) Contains(x uint32) bool {
-	hb := highbits(x)
-	c := rb.highlowcontainer.getContainer(hb)
-	return c != nil && c.contains(lowbits(x))
+	return contains(rb.highlowcontainer, x)
 }
 
 // Contains returns true if the integer is contained in the bitmap (this is a convenience method, the parameter is casted to uint32 and Contains is called)
@@ -201,47 +198,17 @@ func (rb *RoaringBitmap) IsEmpty() bool {
 
 // GetCardinality returns the number of integers contained in the bitmap
 func (rb *RoaringBitmap) GetCardinality() uint64 {
-	size := uint64(0)
-	for i := 0; i < rb.highlowcontainer.size(); i++ {
-		size += uint64(rb.highlowcontainer.getContainerAtIndex(i).getCardinality())
-	}
-	return size
+	return cardinality(rb.highlowcontainer)
 }
 
 // Rank returns the number of integers that are smaller or equal to x (Rank(infinity) would be GetCardinality())
 func (rb *RoaringBitmap) Rank(x uint32) uint32 {
-	size := uint32(0)
-	for i := 0; i < rb.highlowcontainer.size(); i++ {
-		key := rb.highlowcontainer.getKeyAtIndex(i)
-		if key > highbits(x) {
-			return size
-		}
-		if key < highbits(x) {
-			size += uint32(rb.highlowcontainer.getContainerAtIndex(i).getCardinality())
-		} else {
-			return size + uint32(rb.highlowcontainer.getContainerAtIndex(i).rank(lowbits(x)))
-		}
-	}
-	return size
+	return rank(rb.highlowcontainer, x)
 }
 
 // Select returns the xth integer in the bitmap
 func (rb *RoaringBitmap) Select(x uint32) (uint32, error) {
-	if rb.GetCardinality() <= uint64(x) {
-		return 0, fmt.Errorf("Can't find %dth integer in a bitmap with only %d items", x, rb.GetCardinality())
-	}
-
-	remaining := x
-	for i := 0; i < rb.highlowcontainer.size(); i++ {
-		c := rb.highlowcontainer.getContainerAtIndex(i)
-		if remaining >= uint32(c.getCardinality()) {
-			remaining -= uint32(c.getCardinality())
-		} else {
-			key := rb.highlowcontainer.getKeyAtIndex(i)
-			return uint32(key)<<16 + uint32(c.selectInt(uint16(remaining))), nil
-		}
-	}
-	return 0, fmt.Errorf("Can't find %dth integer in a bitmap with only %d items", x, rb.GetCardinality())
+	return selectInt(rb.highlowcontainer, x)
 }
 
 // And computes the intersection between two bitmaps and stores the result in the current bitmap
@@ -369,192 +336,22 @@ main:
 
 // Or computes the union between two bitmaps and returns the result
 func Or(x1, x2 *RoaringBitmap) *RoaringBitmap {
-	answer := NewRoaringBitmap()
-	pos1 := 0
-	pos2 := 0
-	length1 := x1.highlowcontainer.size()
-	length2 := x2.highlowcontainer.size()
-main:
-	for {
-		if (pos1 < length1) && (pos2 < length2) {
-			s1 := x1.highlowcontainer.getKeyAtIndex(pos1)
-			s2 := x2.highlowcontainer.getKeyAtIndex(pos2)
-
-			for {
-				if s1 < s2 {
-					answer.highlowcontainer.appendCopy(x1.highlowcontainer, pos1)
-					pos1++
-					if pos1 == length1 {
-						break main
-					}
-					s1 = x1.highlowcontainer.getKeyAtIndex(pos1)
-				} else if s1 > s2 {
-					answer.highlowcontainer.appendCopy(x2.highlowcontainer, pos2)
-					pos2++
-					if pos2 == length2 {
-						break main
-					}
-					s2 = x2.highlowcontainer.getKeyAtIndex(pos2)
-				} else {
-
-					answer.highlowcontainer.appendContainer(s1, x1.highlowcontainer.getContainerAtIndex(pos1).or(x2.highlowcontainer.getContainerAtIndex(pos2)))
-					pos1++
-					pos2++
-					if (pos1 == length1) || (pos2 == length2) {
-						break main
-					}
-					s1 = x1.highlowcontainer.getKeyAtIndex(pos1)
-					s2 = x2.highlowcontainer.getKeyAtIndex(pos2)
-				}
-			}
-		} else {
-			break
-		}
-	}
-	if pos1 == length1 {
-		answer.highlowcontainer.appendCopyMany(x2.highlowcontainer, pos2, length2)
-	} else if pos2 == length2 {
-		answer.highlowcontainer.appendCopyMany(x1.highlowcontainer, pos1, length1)
-	}
-	return answer
+	return or(x1.highlowcontainer, x2.highlowcontainer)
 }
 
 // And computes the intersection between two bitmaps and returns the result
 func And(x1, x2 *RoaringBitmap) *RoaringBitmap {
-	answer := NewRoaringBitmap()
-	pos1 := 0
-	pos2 := 0
-	length1 := x1.highlowcontainer.size()
-	length2 := x2.highlowcontainer.size()
-main:
-	for {
-		if pos1 < length1 && pos2 < length2 {
-			s1 := x1.highlowcontainer.getKeyAtIndex(pos1)
-			s2 := x2.highlowcontainer.getKeyAtIndex(pos2)
-			for {
-				if s1 == s2 {
-					C := x1.highlowcontainer.getContainerAtIndex(pos1)
-					C = C.and(x2.highlowcontainer.getContainerAtIndex(pos2))
-
-					if C.getCardinality() > 0 {
-						answer.highlowcontainer.appendContainer(s1, C)
-					}
-					pos1++
-					pos2++
-					if (pos1 == length1) || (pos2 == length2) {
-						break main
-					}
-					s1 = x1.highlowcontainer.getKeyAtIndex(pos1)
-					s2 = x2.highlowcontainer.getKeyAtIndex(pos2)
-				} else if s1 < s2 {
-					pos1 = x1.highlowcontainer.advanceUntil(s2, pos1)
-					if pos1 == length1 {
-						break main
-					}
-					s1 = x1.highlowcontainer.getKeyAtIndex(pos1)
-				} else { // s1 > s2
-					pos2 = x2.highlowcontainer.advanceUntil(s1, pos2)
-					if pos2 == length2 {
-						break main
-					}
-					s2 = x2.highlowcontainer.getKeyAtIndex(pos2)
-				}
-			}
-		} else {
-			break
-		}
-	}
-	return answer
+	return and(x1.highlowcontainer, x2.highlowcontainer)
 }
 
 // Xor computes the symmetric difference between two bitmaps and returns the result
 func Xor(x1, x2 *RoaringBitmap) *RoaringBitmap {
-	answer := NewRoaringBitmap()
-	pos1 := 0
-	pos2 := 0
-	length1 := x1.highlowcontainer.size()
-	length2 := x2.highlowcontainer.size()
-	for {
-		if (pos1 < length1) && (pos2 < length2) {
-			s1 := x1.highlowcontainer.getKeyAtIndex(pos1)
-			s2 := x2.highlowcontainer.getKeyAtIndex(pos2)
-			if s1 < s2 {
-				answer.highlowcontainer.appendCopy(x1.highlowcontainer, pos1)
-				pos1++
-			} else if s1 > s2 {
-				answer.highlowcontainer.appendCopy(x2.highlowcontainer, pos2)
-				pos2++
-			} else {
-				c := x1.highlowcontainer.getContainerAtIndex(pos1).xor(x2.highlowcontainer.getContainerAtIndex(pos2))
-				if c.getCardinality() > 0 {
-					answer.highlowcontainer.appendContainer(s1, c)
-				}
-				pos1++
-				pos2++
-			}
-		} else {
-			break
-		}
-	}
-	if pos1 == length1 {
-		answer.highlowcontainer.appendCopyMany(x2.highlowcontainer, pos2, length2)
-	} else if pos2 == length2 {
-		answer.highlowcontainer.appendCopyMany(x1.highlowcontainer, pos1, length1)
-	}
-	return answer
+	return xor(x1.highlowcontainer, x2.highlowcontainer)
 }
 
 // AndNot computes the difference between two bitmaps and returns the result
 func AndNot(x1, x2 *RoaringBitmap) *RoaringBitmap {
-	answer := NewRoaringBitmap()
-	pos1 := 0
-	pos2 := 0
-	length1 := x1.highlowcontainer.size()
-	length2 := x2.highlowcontainer.size()
-
-main:
-	for {
-		if pos1 < length1 && pos2 < length2 {
-			s1 := x1.highlowcontainer.getKeyAtIndex(pos1)
-			s2 := x2.highlowcontainer.getKeyAtIndex(pos2)
-			for {
-				if s1 < s2 {
-					answer.highlowcontainer.appendCopy(x1.highlowcontainer, pos1)
-					pos1++
-					if pos1 == length1 {
-						break main
-					}
-					s1 = x1.highlowcontainer.getKeyAtIndex(pos1)
-				} else if s1 == s2 {
-					c1 := x1.highlowcontainer.getContainerAtIndex(pos1)
-					c2 := x2.highlowcontainer.getContainerAtIndex(pos2)
-					diff := c1.andNot(c2)
-					if diff.getCardinality() > 0 {
-						answer.highlowcontainer.appendContainer(s1, diff)
-					}
-					pos1++
-					pos2++
-					if (pos1 == length1) || (pos2 == length2) {
-						break main
-					}
-					s1 = x1.highlowcontainer.getKeyAtIndex(pos1)
-					s2 = x2.highlowcontainer.getKeyAtIndex(pos2)
-				} else { //s1 > s2
-					pos2 = x2.highlowcontainer.advanceUntil(s1, pos2)
-					if pos2 == length2 {
-						break main
-					}
-					s2 = x2.highlowcontainer.getKeyAtIndex(pos2)
-				}
-			}
-		} else {
-			break
-		}
-	}
-	if pos2 == length2 {
-		answer.highlowcontainer.appendCopyMany(x1.highlowcontainer, pos1, length1)
-	}
-	return answer
+	return andNot(x1.highlowcontainer, x2.highlowcontainer)
 }
 
 // BitmapOf generates a new bitmap filled with the specified integer
