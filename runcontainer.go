@@ -2320,6 +2320,18 @@ func (rc *runContainer16) xor(a container) container {
 	panic("unsupported container type")
 }
 
+func (rc *runContainer16) ixor(a container) container {
+	switch c := a.(type) {
+	case *arrayContainer:
+		return rc.xorArray(c)
+	case *bitmapContainer:
+		return rc.xorBitmap(c)
+	case *runContainer16:
+		return rc.xorRunContainer16(c)
+	}
+	panic("unsupported container type")
+}
+
 func (rc *runContainer16) iandNot(a container) container {
 	switch c := a.(type) {
 	case *arrayContainer:
@@ -2433,18 +2445,18 @@ func (rc *runContainer16) iandNotBitmap(bc *bitmapContainer) container {
 func (rc *runContainer16) xorRunContainer16(x2 *runContainer16) container {
 	rcb := rc.toBitmapContainer()
 	x2b := x2.toBitmapContainer()
-	return rcb.xorBitmap(x2b)
+	return rcb.ixorBitmap(x2b)
 }
 
 func (rc *runContainer16) xorArray(ac *arrayContainer) container {
 	rcb := rc.toBitmapContainer()
 	acb := ac.toBitmapContainer()
-	return rcb.xorBitmap(acb)
+	return rcb.ixorBitmap(acb)
 }
 
 func (rc *runContainer16) xorBitmap(bc *bitmapContainer) container {
 	rcb := rc.toBitmapContainer()
-	return rcb.xorBitmap(bc)
+	return rcb.ixorBitmap(bc)
 }
 
 // convert to bitmap or array *if needed*

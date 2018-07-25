@@ -572,21 +572,37 @@ func (bc *bitmapContainer) xor(a container) container {
 	panic("unsupported container type")
 }
 
+func (bc *bitmapContainer) ixor(a container) container {
+	switch x := a.(type) {
+	case *arrayContainer:
+		return bc.ixorArray(x)
+	case *bitmapContainer:
+		return bc.ixorBitmap(x)
+	case *runContainer16:
+		return x.xorBitmap(bc)
+	}
+	panic("unsupported container type")
+}
+
 func (bc *bitmapContainer) xorArray(value2 *arrayContainer) container {
 	answer := bc.clone().(*bitmapContainer)
+	return answer.ixorArray(value2)
+}
+
+func (bc *bitmapContainer) ixorArray(value2 *arrayContainer) container {
 	c := value2.getCardinality()
 	for k := 0; k < c; k++ {
 		vc := value2.content[k]
 		index := uint(vc) >> 6
-		abi := answer.bitmap[index]
+		abi := bc.bitmap[index]
 		mask := uint64(1) << (vc % 64)
-		answer.cardinality += 1 - 2*int((abi&mask)>>(vc%64))
-		answer.bitmap[index] = abi ^ mask
+		bc.cardinality += 1 - 2*int((abi&mask)>>(vc%64))
+		bc.bitmap[index] = abi ^ mask
 	}
-	if answer.cardinality <= arrayDefaultMaxSize {
-		return answer.toArrayContainer()
+	if bc.cardinality <= arrayDefaultMaxSize {
+		return bc.toArrayContainer()
 	}
-	return answer
+	return bc
 }
 
 func (bc *bitmapContainer) rank(x uint16) int {
@@ -623,6 +639,25 @@ func (bc *bitmapContainer) xorBitmap(value2 *bitmapContainer) container {
 			return newRunContainer16Range(0, MaxUint16)
 		}
 		return answer
+	}
+	ac := newArrayContainerSize(newCardinality)
+	fillArrayXOR(ac.content, bc.bitmap, value2.bitmap)
+	ac.content = ac.content[:newCardinality]
+	return ac
+}
+
+func (bc *bitmapContainer) ixorBitmap(value2 *bitmapContainer) container {
+	newCardinality := int(popcntXorSlice(bc.bitmap, value2.bitmap))
+
+	if newCardinality > arrayDefaultMaxSize {
+		for k := 0; k < len(bc.bitmap); k++ {
+			bc.bitmap[k] ^= value2.bitmap[k]
+		}
+		bc.cardinality = newCardinality
+		if bc.isFull() {
+			return newRunContainer16Range(0, MaxUint16)
+		}
+		return bc
 	}
 	ac := newArrayContainerSize(newCardinality)
 	fillArrayXOR(ac.content, bc.bitmap, value2.bitmap)

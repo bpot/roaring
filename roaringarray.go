@@ -37,6 +37,7 @@ type container interface {
 	not(start, final int) container        // range is [firstOfRange,lastOfRange)
 	inot(firstOfRange, endx int) container // i stands for inplace, range is [firstOfRange,endx)
 	xor(r container) container
+	ixor(r container) container // i stands for inplace
 	getShortIterator() shortIterable
 	getReverseIterator() shortIterable
 	getManyIterator() manyIterable

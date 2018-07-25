@@ -775,9 +775,11 @@ func (rb *Bitmap) Xor(x2 *Bitmap) {
 				pos2++
 			} else {
 				// TODO: couple be computed in-place for reduced memory usage
-				c := rb.highlowcontainer.getContainerAtIndex(pos1).xor(x2.highlowcontainer.getContainerAtIndex(pos2))
-				if c.getCardinality() > 0 {
-					rb.highlowcontainer.setContainerAtIndex(pos1, c)
+				c1 := rb.highlowcontainer.getWritableContainerAtIndex(pos1)
+				c2 := x2.highlowcontainer.getContainerAtIndex(pos2)
+				c1 = c1.ixor(c2)
+				if c1.getCardinality() > 0 {
+					rb.highlowcontainer.setContainerAtIndex(pos1, c1)
 					pos1++
 				} else {
 					rb.highlowcontainer.removeAtIndex(pos1)

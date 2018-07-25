@@ -580,6 +580,18 @@ func (ac *arrayContainer) xor(a container) container {
 	panic("unsupported container type")
 }
 
+func (ac *arrayContainer) ixor(a container) container {
+	switch x := a.(type) {
+	case *arrayContainer:
+		return ac.xorArray(x)
+	case *bitmapContainer:
+		return a.ixor(ac)
+	case *runContainer16:
+		return x.xorArray(ac)
+	}
+	panic("unsupported container type")
+}
+
 func (ac *arrayContainer) xorArray(value2 *arrayContainer) container {
 	value1 := ac
 	totalCardinality := value1.getCardinality() + value2.getCardinality()
